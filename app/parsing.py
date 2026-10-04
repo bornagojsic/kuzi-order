@@ -32,7 +32,9 @@ Interpret the customer's message and produce a structured result. Rules:
    (e.g. "hamburger"). NEVER replace it with a similar menu item and never
    silently drop it.
 3. Preserve quantities exactly. Numbers may be written as Croatian words
-   ("dva", "dvije", "tri", "jednu"...) - convert them to integers.
+   ("dva", "dvije", "tri", "jednu"...) - convert them to integers. Each menu
+   item may appear in "items" at most once: if the customer mentions the same
+   item again, sum the quantities into a single entry.
 4. If the customer corrects themselves ("tri margarite i colu, ma ne, ipak
    dvije margarite"), use only their FINAL intent.
 5. If the customer is not ordering but asking a question (e.g. "imate li
@@ -57,11 +59,19 @@ def validate_output(raw: dict, menu_ids: set[str]) -> list[str]:
     order = parsed.order
     errors: list[str] = []
 
+    item_ids = [item.id for item in order.items]
+    if len(item_ids) != len(set(item_ids)):
+        errors.append("duplicate menu ids in items: each item must appear at most once")
+
     for item in order.items:
         if item.id not in menu_ids:
             errors.append(f"unknown menu id '{item.id}' in items")
         if item.quantity > MAX_QUANTITY:
             errors.append(f"unreasonable quantity {item.quantity} for item '{item.id}'")
+
+    suggestion_ids = [item.id for item in order.suggestions]
+    if len(suggestion_ids) != len(set(suggestion_ids)):
+        errors.append("duplicate menu ids in suggestions: each item must appear at most once")
 
     for item in order.suggestions:
         if item.id not in menu_ids:

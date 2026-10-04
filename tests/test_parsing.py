@@ -46,6 +46,10 @@ class TestBuildPrompt:
         assert "final intent" in prompt.lower()
         assert "recommendation" in prompt
 
+    def test_demands_single_entry_per_menu_item(self):
+        prompt = build_prompt("text", [])
+        assert "at most once" in prompt
+
 
 class TestValidateOutput:
     def test_accepts_valid_output(self):
@@ -97,6 +101,27 @@ class TestValidateOutput:
     def test_rejects_unreasonable_quantity(self):
         raw = valid_output(items=[{"id": "margarita", "quantity": 1000}])
         assert validate_output(raw, MENU_IDS) != []
+
+    def test_rejects_duplicate_ids_in_items(self):
+        raw = valid_output(
+            items=[{"id": "margarita", "quantity": 1}, {"id": "margarita", "quantity": 2}]
+        )
+        errors = validate_output(raw, MENU_IDS)
+        assert any("duplicate" in e.lower() for e in errors)
+
+    def test_rejects_duplicate_ids_in_suggestions(self):
+        raw = valid_output(
+            intent="recommendation",
+            items=[],
+            unavailable=[],
+            suggestions=[
+                {"id": "vegetariana", "quantity": 1},
+                {"id": "margarita", "quantity": 1},
+                {"id": "vegetariana", "quantity": 1},
+            ],
+        )
+        errors = validate_output(raw, MENU_IDS)
+        assert any("duplicate" in e.lower() and "suggestions" in e for e in errors)
 
 
 class TestToResponse:
