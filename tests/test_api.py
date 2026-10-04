@@ -38,7 +38,7 @@ class FakeGeminiClient:
 
 
 class _ScriptedSDK:
-    """Stand-in for google.genai.Client: scripted `.parsed` results or exceptions."""
+    """Stand-in for google.genai.Client: scripted JSON payloads or exceptions."""
 
     def __init__(self, responses: list) -> None:
         self.responses = list(responses)
@@ -50,7 +50,7 @@ class _ScriptedSDK:
         result = self.responses.pop(0)
         if isinstance(result, Exception):
             raise result
-        return SimpleNamespace(parsed=result)
+        return SimpleNamespace(text=result.model_dump_json())
 
 
 class _TransientError(Exception):
@@ -115,15 +115,12 @@ class TestHappyPath:
 
 
 class TestRecommendation:
-    def test_vegetarian_question_returns_suggestions_no_items(self, client):
+    def test_vegetarian_question_returns_bare_ids_no_items(self, client):
         recommendation = output(
             intent="recommendation",
             items=[],
             unavailable=[],
-            suggestions=[
-                {"id": "vegetariana", "quantity": 1},
-                {"id": "quattro_formaggi", "quantity": 1},
-            ],
+            suggestions=["vegetariana", "quattro_formaggi"],
         )
         set_gemini(client, FakeGeminiClient([recommendation]))
         response = post_order(client, {"text": "imate li nešto bez mesa za nas dvoje?"})
@@ -131,13 +128,45 @@ class TestRecommendation:
         body = response.json()
         assert body["items"] == []
         assert body["unavailable"] == []
-        assert {s["id"] for s in body["suggestions"]} == {"vegetariana", "quattro_formaggi"}
+        assert body["suggestions"] == ["vegetariana", "quattro_formaggi"]
+
+    def test_suggestions_deduplicated(self, client):
+        # Validation feeds duplicates back once; model then returns unique ids.
+        dupes = output(
+            intent="recommendation",
+            items=[],
+            unavailable=[],
+            suggestions=["vegetariana", "vegetariana"],
+        )
+        fixed = output(
+            intent="recommendation",
+            items=[],
+            unavailable=[],
+            suggestions=["vegetariana"],
+        )
+        set_gemini(client, FakeGeminiClient([dupes, fixed]))
+        response = post_order(client, {"text": "imate li nešto bez mesa?"})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["vegetariana"]
+
+    def test_unknown_suggestion_id_retried_once_then_502(self, client):
+        bad = output(intent="recommendation", items=[], unavailable=[], suggestions=["hamburger"])
+        still_bad = output(
+            intent="recommendation", items=[], unavailable=[], suggestions=["pizza_hawaii"]
+        )
+        fake = set_gemini(client, FakeGeminiClient([bad, still_bad]))
+        response = post_order(client, {"text": "imate li nešto bez mesa?"})
+        assert response.status_code == 502
+        assert len(fake.calls) == 2
+        assert "hamburger" in fake.calls[1]  # validation error fed back to the model
 
 
 class TestInputValidation:
-    def test_empty_text_rejected(self, client):
-        assert post_order(client, {"text": ""}).status_code == 422
-        assert post_order(client, {}).status_code == 422
+    def test_empty_text_rejected_without_model_call(self, client):
+        fake = set_gemini(client, FakeGeminiClient([]))
+        response = post_order(client, {"text": ""})
+        assert response.status_code == 422
+        assert fake.calls == []
 
     def test_whitespace_only_text_rejected_without_model_call(self, client):
         fake = set_gemini(client, FakeGeminiClient([]))
@@ -145,12 +174,31 @@ class TestInputValidation:
         assert response.status_code == 422
         assert fake.calls == []
 
+    def test_missing_text_rejected(self, client):
+        assert post_order(client, {}).status_code == 422
+
+    def test_null_text_rejected(self, client):
+        assert post_order(client, {"text": None}).status_code == 422
+
     def test_too_long_text_rejected(self, client):
         response = post_order(client, {"text": "a" * 1001})
         assert response.status_code == 422
 
-    def test_non_string_text_rejected(self, client):
-        assert post_order(client, {"text": 123}).status_code == 422
+    def test_numeric_text_rejected_without_coercion(self, client):
+        # Pydantic must not coerce 123 into "123" and pass it to the model.
+        fake = set_gemini(client, FakeGeminiClient([]))
+        response = post_order(client, {"text": 123})
+        assert response.status_code == 422
+        assert fake.calls == []
+
+
+class TestNoOrderInput:
+    def test_gibberish_returns_empty_result(self, client):
+        # "a" contains no order; prompt rule 6 answers with an empty result.
+        set_gemini(client, FakeGeminiClient([output(items=[], unavailable=[])]))
+        response = post_order(client, {"text": "a"})
+        assert response.status_code == 200
+        assert response.json() == {"items": [], "unavailable": [], "suggestions": []}
 
 
 class TestGeminiFailures:
@@ -192,6 +240,26 @@ class TestInfrastructure:
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
+
+    def test_menu_endpoint_returns_menu_items(self, client):
+        response = client.get("/menu")
+        assert response.status_code == 200
+        menu = response.json()
+        assert [item["id"] for item in menu] == [
+            "margarita",
+            "capricciosa",
+            "diavola",
+            "vegetariana",
+            "quattro_formaggi",
+            "cezar_salata",
+            "mijesana_salata",
+            "coca_cola",
+            "mineralna_voda",
+            "pivo",
+        ]
+        assert menu[0]["naziv"] == "Pizza Margarita"
+        assert menu[0]["cijena_eur"] == 9.0
+        assert menu[0]["bez_mesa"] is True
 
     def test_missing_key_returns_503(self, client):
         # Lifespan sets gemini_client to None when no key; simulate that.
