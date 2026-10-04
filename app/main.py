@@ -35,8 +35,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="kuzi-order", lifespan=lifespan)
 
 
+# Sync endpoint on purpose: the Gemini call blocks (retries with backoff), so
+# FastAPI runs it in the threadpool instead of stalling the event loop.
 @app.post("/order")
-async def create_order(request: OrderRequest, fastapi_request: Request) -> dict:
+def create_order(request: OrderRequest, fastapi_request: Request) -> dict:
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Order text is empty")
