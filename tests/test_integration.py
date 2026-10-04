@@ -1,16 +1,21 @@
 """Optional integration tests against the real Gemini API.
 
-Auto-skipped unless GEMINI_API_KEY is set. Run with:
-    GEMINI_API_KEY=... uv run pytest -m integration
+Auto-skipped unless GEMINI_API_KEY is set (in the environment or in .env).
+Run with:
+    uv run pytest -m integration
 
 Add --slow to pause 30s between test cases (free-tier rate-limit friendly):
-    GEMINI_API_KEY=... uv run pytest -m integration --slow
+    uv run pytest -m integration --slow
 """
 
 import os
 import time
 
 import pytest
+from dotenv import load_dotenv
+
+# Pick up .env before evaluating the skip condition below.
+load_dotenv()
 
 pytestmark = [
     pytest.mark.integration,
