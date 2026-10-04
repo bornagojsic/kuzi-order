@@ -4,7 +4,7 @@ Auto-skipped unless GEMINI_API_KEY is set (in the environment or in .env).
 Run with:
     uv run pytest -m integration
 
-Add --slow to pause 30s between test cases (free-tier rate-limit friendly):
+Add --slow to pause 5s between test cases (free-tier rate-limit friendly):
     uv run pytest -m integration --slow
 """
 
@@ -27,12 +27,26 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app.gemini_client import GeminiClient  # noqa: E402
 from app.main import app  # noqa: E402
 
-SLOW_PAUSE_SECONDS = 30
+SLOW_PAUSE_SECONDS = 5
+
+# (order text, expected items as (id, quantity), expected unavailable as
+# {(text, quantity)}) - unavailable item ordering is not contractual, so the
+# texts are compared as a set.
+UTTERANCE_CASES = [
+    ("dvije margarite i još jednu margaritu", [("margarita", 3)], set()),
+    ("dvije margarite, ma ne, tri", [("margarita", 3)], set()),
+    ("tri margarite, ne dvije, zapravo jednu", [("margarita", 1)], set()),
+    ("jednu kapriciozu", [("capricciosa", 1)], set()),
+    ("daj jednu coca-colu", [("coca_cola", 1)], set()),
+    ("hamburger", [], {("hamburger", 1)}),
+    ("hamburger i jednu colu", [("coca_cola", 1)], {("hamburger", 1)}),
+    ("hamburger i cheeseburger", [], {("hamburger", 1), ("cheeseburger", 1)}),
+]
 
 
 @pytest.fixture(autouse=True)
 def slow_pause_between_api_calls(request: pytest.FixtureRequest):
-    """With --slow, sleep 30s before every API test except the first."""
+    """With --slow, sleep 5s before every API test except the first."""
     if request.config.getoption("--slow"):
         if getattr(request.session, "_kuzi_api_tests_run", 0) > 0:
             time.sleep(SLOW_PAUSE_SECONDS)
@@ -58,9 +72,31 @@ def test_real_happy_path(client):
     assert body["unavailable"] == [{"text": "hamburger", "quantity": 2}]
 
 
+VEGETARIAN_FOOD_IDS = {"margarita", "vegetariana", "quattro_formaggi", "mijesana_salata"}
+
+
 def test_real_vegetarian_question(client):
     response = client.post("/order", json={"text": "imate li nešto bez mesa za nas dvoje?"})
     assert response.status_code == 200
     body = response.json()
     assert body["items"] == []
-    assert len(body["suggestions"]) > 0
+    assert set(body["suggestions"]) == VEGETARIAN_FOOD_IDS
+    assert not any(s in body["suggestions"] for s in ("coca_cola", "mineralna_voda", "pivo"))
+
+
+def test_real_vegetarian_question_ignores_party_size(client):
+    two = client.post("/order", json={"text": "imate li nešto bez mesa za nas dvoje?"})
+    assert two.status_code == 200
+    ten = client.post("/order", json={"text": "imate li nešto bez mesa za nas deset?"})
+    assert ten.status_code == 200
+    assert ten.json()["suggestions"] == two.json()["suggestions"]
+
+
+@pytest.mark.parametrize("text,expected_items,expected_unavailable", UTTERANCE_CASES)
+def test_real_utterance(client, text, expected_items, expected_unavailable):
+    response = client.post("/order", json={"text": text})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"] == [{"id": i, "quantity": q} for i, q in expected_items]
+    assert {(u["text"], u["quantity"]) for u in body["unavailable"]} == expected_unavailable
+    assert body["suggestions"] == []
