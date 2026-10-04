@@ -17,7 +17,6 @@ from app.schemas import GeminiOutput
 load_dotenv()
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 TRANSIENT_RETRIES = 2  # extra attempts for overloaded/unavailable model
 TRANSIENT_BACKOFF_SECONDS = 2.0
@@ -31,19 +30,22 @@ class GeminiClient:
     """Sends the order text + prompt to Gemini and returns validated structured output."""
 
     def __init__(self, api_key: str | None = None) -> None:
-        key = api_key if api_key is not None else GEMINI_API_KEY
+        # Read the key at construction time, not at import time, so a key that
+        # appears in the environment after this module was imported is picked up.
+        key = api_key if api_key is not None else os.environ.get("GEMINI_API_KEY", "")
         if not key:
             raise GeminiError("GEMINI_API_KEY is not set")
         self._client = genai.Client(api_key=key)
 
-    def parse_order(self, prompt: str) -> GeminiOutput:
+    def parse_order(self, prompt: str, retries: int = TRANSIENT_RETRIES) -> GeminiOutput:
         """Call Gemini with a structured-output schema and return the parsed result.
 
         Raises GeminiError on any SDK failure or on output that does not match
-        the schema (parsed == None).
+        the schema (parsed == None). `retries` bounds the extra attempts made
+        for transient (overloaded/unavailable) failures.
         """
         try:
-            response = self._generate_with_retry(prompt)
+            response = self._generate_with_retry(prompt, retries)
         except Exception as exc:
             raise GeminiError(f"Gemini call failed: {exc}") from exc
 
@@ -51,13 +53,27 @@ class GeminiClient:
             raise GeminiError("Gemini returned output that does not match the schema")
         return response.parsed
 
-    def _generate_with_retry(self, prompt: str):
-        """Call the model, retrying a couple of times on transient overload errors.
+    def parse_order_with_feedback(
+        self, prompt: str, previous: str, errors: list[str]
+    ) -> GeminiOutput:
+        """Retry a failed attempt, feeding the validation errors back to the model.
+
+        No transient retries here: a request is bounded at two model calls
+        (initial + feedback), so one bad answer cannot multiply into six calls.
+        """
+        feedback = (
+            f"{prompt}\n\nYour previous answer was invalid:\n{previous}\n"
+            f"Problems to fix:\n- " + "\n- ".join(errors) + "\nAnswer again, correctly."
+        )
+        return self.parse_order(feedback, retries=0)
+
+    def _generate_with_retry(self, prompt: str, retries: int):
+        """Call the model, retrying on transient overload errors.
 
         Anything else (auth, bad request, not found) fails immediately.
         """
         last_exc: Exception | None = None
-        for attempt in range(TRANSIENT_RETRIES + 1):
+        for attempt in range(retries + 1):
             try:
                 return self._client.models.generate_content(
                     model=MODEL,
@@ -69,7 +85,7 @@ class GeminiClient:
                     ),
                 )
             except Exception as exc:
-                if _is_transient(exc) and attempt < TRANSIENT_RETRIES:
+                if _is_transient(exc) and attempt < retries:
                     last_exc = exc
                     time.sleep(TRANSIENT_BACKOFF_SECONDS)
                     continue
@@ -83,13 +99,3 @@ def _is_transient(exc: Exception) -> bool:
     if code in (429, 500, 503):
         return True
     return "UNAVAILABLE" in str(exc) or "high demand" in str(exc)
-
-    def parse_order_with_feedback(
-        self, prompt: str, previous: str, errors: list[str]
-    ) -> GeminiOutput:
-        """Retry a failed attempt, feeding the validation errors back to the model."""
-        feedback = (
-            f"{prompt}\n\nYour previous answer was invalid:\n{previous}\n"
-            f"Problems to fix:\n- " + "\n- ".join(errors) + "\nAnswer again, correctly."
-        )
-        return self.parse_order(feedback)

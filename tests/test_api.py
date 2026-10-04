@@ -1,8 +1,11 @@
 """API tests using FastAPI's TestClient with a fake Gemini client - no real calls."""
 
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.gemini_client import GeminiClient, GeminiError
 from app.main import app
 from app.schemas import GeminiOrder, GeminiOutput
 
@@ -32,6 +35,27 @@ class FakeGeminiClient:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class _ScriptedSDK:
+    """Stand-in for google.genai.Client: scripted `.parsed` results or exceptions."""
+
+    def __init__(self, responses: list) -> None:
+        self.responses = list(responses)
+        self.calls: list[str] = []
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs["contents"])
+        result = self.responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return SimpleNamespace(parsed=result)
+
+
+class _TransientError(Exception):
+    def __init__(self) -> None:
+        super().__init__("503 UNAVAILABLE: the model is overloaded")
 
 
 def output(**overrides) -> GeminiOutput:
@@ -132,8 +156,6 @@ class TestInputValidation:
 class TestGeminiFailures:
     def test_sdk_exception_returns_502(self, client):
         # The real client wraps any SDK failure in GeminiError; simulate that.
-        from app.gemini_client import GeminiError
-
         set_gemini(client, FakeGeminiClient([GeminiError("boom")]))
         response = post_order(client, {"text": "jednu margaritu"})
         assert response.status_code == 502
@@ -160,8 +182,6 @@ class TestGeminiFailures:
 
     def test_malformed_gemini_output_returns_502(self, client):
         # parse_order raising GeminiError simulates schema-mismatch output.
-        from app.gemini_client import GeminiError
-
         set_gemini(client, FakeGeminiClient([GeminiError("parsed is None")]))
         response = post_order(client, {"text": "jednu colu"})
         assert response.status_code == 502
@@ -178,3 +198,45 @@ class TestInfrastructure:
         client.app.state.gemini_client = None
         response = post_order(client, {"text": "jednu margaritu"})
         assert response.status_code == 503
+
+
+class TestRealGeminiClient:
+    """Drives the real GeminiClient over a scripted SDK.
+
+    FakeGeminiClient cannot see bugs inside GeminiClient itself - e.g. the
+    regression where parse_order_with_feedback was accidentally nested inside
+    _is_transient and every feedback retry raised AttributeError (HTTP 500).
+    """
+
+    def test_exposes_feedback_method(self):
+        assert hasattr(GeminiClient, "parse_order_with_feedback")
+
+    def test_invalid_first_output_retries_with_real_client(self, monkeypatch, client):
+        bad = output(items=[{"id": "hamburger", "quantity": 2}])
+        good = output(
+            items=[{"id": "margarita", "quantity": 2}],
+            unavailable=[{"text": "hamburger", "quantity": 2}],
+        )
+        sdk = _ScriptedSDK([bad, good])
+        monkeypatch.setattr("app.gemini_client.genai.Client", lambda **kwargs: sdk)
+        set_gemini(client, GeminiClient(api_key="test-key"))
+
+        response = post_order(client, {"text": "dva hamburgera i dvije margarite"})
+
+        assert response.status_code == 200
+        assert len(sdk.calls) == 2
+        assert "hamburger" in sdk.calls[1]  # validation errors fed back
+
+    def test_feedback_path_makes_no_transient_retries(self, monkeypatch):
+        bad = output(items=[{"id": "hamburger", "quantity": 2}])
+        # Three failures: consumed only if the feedback path stacked retries.
+        sdk = _ScriptedSDK([bad, _TransientError(), _TransientError(), _TransientError()])
+        monkeypatch.setattr("app.gemini_client.genai.Client", lambda **kwargs: sdk)
+        monkeypatch.setattr("app.gemini_client.time.sleep", lambda seconds: None)
+        real = GeminiClient(api_key="test-key")
+
+        real.parse_order("prompt")
+        with pytest.raises(GeminiError):
+            real.parse_order_with_feedback("prompt", "previous", ["unknown menu id"])
+
+        assert len(sdk.calls) == 2
