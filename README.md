@@ -34,11 +34,25 @@ via `GEMINI_MODEL`.
 
 One extension to the suggested format: `suggestions`. When the customer asks a
 question instead of ordering (e.g. "imate li nešto bez mesa za nas dvoje?"),
-`items` stays empty and matching menu items are listed there. Self-corrections
-("tri margarite i colu, ma ne, ipak dvije margarite") resolve to the final
-intent.
+`items` stays empty and `suggestions` lists the id of every matching menu item
+(bare ids, no quantities, in menu order). For a "bez mesa" question drinks are
+excluded unless the question is about drinks, and the number of people
+mentioned never changes the suggestions:
 
-Errors: 422 bad input (missing/empty/too long), 502 Gemini failed or its
+```json
+{"items": [], "unavailable": [], "suggestions": ["margarita", "vegetariana", "quattro_formaggi", "mijesana_salata"]}
+```
+
+Self-corrections ("tri margarite i
+colu, ma ne, ipak dvije margarite") resolve to the final intent. A message
+with no order at all ("a") returns empty lists.
+
+Other endpoints: `GET /menu` returns the raw `jelovnik.json` menu; `/app`
+serves a small web UI for typing orders and shows the menu beside the order
+form; `/docs` has the interactive schema.
+
+Errors: 422 bad input (missing, null, non-string, empty, whitespace-only or
+too long text), 502 Gemini failed or its
 output failed validation after one retry, 503 key not configured. `GET /health`
 shows status.
 
@@ -57,6 +71,8 @@ the model on every change. To verify the system works well: keep a golden set
 of ~30–50 real Croatian utterances (number words, typos, self-corrections,
 questions) with expected `items`/`unavailable` and measure per-field exact
 match — treating any invented menu id or dropped item as a hard failure, not
-just a lower score. The deterministic parts (prompt rules, validation, error
-mapping) are unit-tested without any model calls, and fault injection covers
-the 502/503 paths.
+just a lower score. A starter table already lives in
+`tests/test_integration.py` (`UTTERANCE_CASES`) and runs against the real
+model with `uv run pytest -m integration`. The deterministic parts (prompt
+rules, validation, error mapping) are unit-tested without any model calls, and
+fault injection covers the 502/503 paths.
