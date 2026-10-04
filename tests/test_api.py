@@ -1,0 +1,180 @@
+"""API tests using FastAPI's TestClient with a fake Gemini client - no real calls."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.schemas import GeminiOrder, GeminiOutput
+
+
+class FakeGeminiClient:
+    """Stand-in for GeminiClient with a scripted list of responses.
+
+    Each response is either a GeminiOutput (success) or an Exception to raise.
+    """
+
+    def __init__(self, responses: list) -> None:
+        self.responses = list(responses)
+        self.calls: list[str] = []
+
+    def parse_order(self, prompt: str) -> GeminiOutput:
+        self.calls.append(prompt)
+        result = self.responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    def parse_order_with_feedback(
+        self, prompt: str, previous: str, errors: list[str]
+    ) -> GeminiOutput:
+        self.calls.append(f"RETRY with errors: {errors}")
+        result = self.responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def output(**overrides) -> GeminiOutput:
+    data = {
+        "intent": "order",
+        "items": [{"id": "margarita", "quantity": 2}, {"id": "coca_cola", "quantity": 1}],
+        "unavailable": [{"text": "hamburger", "quantity": 2}],
+        "suggestions": [],
+    }
+    data.update(overrides)
+    return GeminiOutput(order=GeminiOrder(**data))
+
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def set_gemini(client: TestClient, fake: FakeGeminiClient) -> FakeGeminiClient:
+    client.app.state.gemini_client = fake
+    return fake
+
+
+def post_order(client: TestClient, body: dict):
+    return client.post("/order", json=body)
+
+
+class TestHappyPath:
+    def test_basic_order(self, client):
+        fake = set_gemini(client, FakeGeminiClient([output()]))
+        response = post_order(client, {"text": "dvije margarite i jednu colu"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "items": [
+                {"id": "margarita", "quantity": 2},
+                {"id": "coca_cola", "quantity": 1},
+            ],
+            "unavailable": [{"text": "hamburger", "quantity": 2}],
+            "suggestions": [],
+        }
+        assert len(fake.calls) == 1
+
+    def test_self_correction_uses_final_intent(self, client):
+        # The model is instructed to return the final intent; the fake models that.
+        corrected = output(
+            items=[{"id": "margarita", "quantity": 2}, {"id": "coca_cola", "quantity": 1}],
+            unavailable=[],
+        )
+        set_gemini(client, FakeGeminiClient([corrected]))
+        response = post_order(client, {"text": "tri margarite i colu, ma ne, ipak dvije margarite"})
+        assert response.status_code == 200
+        assert response.json()["items"] == [
+            {"id": "margarita", "quantity": 2},
+            {"id": "coca_cola", "quantity": 1},
+        ]
+
+
+class TestRecommendation:
+    def test_vegetarian_question_returns_suggestions_no_items(self, client):
+        recommendation = output(
+            intent="recommendation",
+            items=[],
+            unavailable=[],
+            suggestions=[
+                {"id": "vegetariana", "quantity": 1},
+                {"id": "quattro_formaggi", "quantity": 1},
+            ],
+        )
+        set_gemini(client, FakeGeminiClient([recommendation]))
+        response = post_order(client, {"text": "imate li nešto bez mesa za nas dvoje?"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["items"] == []
+        assert body["unavailable"] == []
+        assert {s["id"] for s in body["suggestions"]} == {"vegetariana", "quattro_formaggi"}
+
+
+class TestInputValidation:
+    def test_empty_text_rejected(self, client):
+        assert post_order(client, {"text": ""}).status_code == 422
+        assert post_order(client, {}).status_code == 422
+
+    def test_whitespace_only_text_rejected_without_model_call(self, client):
+        fake = set_gemini(client, FakeGeminiClient([]))
+        response = post_order(client, {"text": "   "})
+        assert response.status_code == 422
+        assert fake.calls == []
+
+    def test_too_long_text_rejected(self, client):
+        response = post_order(client, {"text": "a" * 1001})
+        assert response.status_code == 422
+
+    def test_non_string_text_rejected(self, client):
+        assert post_order(client, {"text": 123}).status_code == 422
+
+
+class TestGeminiFailures:
+    def test_sdk_exception_returns_502(self, client):
+        # The real client wraps any SDK failure in GeminiError; simulate that.
+        from app.gemini_client import GeminiError
+
+        set_gemini(client, FakeGeminiClient([GeminiError("boom")]))
+        response = post_order(client, {"text": "jednu margaritu"})
+        assert response.status_code == 502
+
+    def test_invalid_id_retried_once_then_502(self, client):
+        bad = output(items=[{"id": "hamburger", "quantity": 2}])
+        still_bad = output(items=[{"id": "pizza_hawaii", "quantity": 2}])
+        fake = set_gemini(client, FakeGeminiClient([bad, still_bad]))
+        response = post_order(client, {"text": "dva hamburgera"})
+        assert response.status_code == 502
+        assert len(fake.calls) == 2
+
+    def test_invalid_id_retried_then_success(self, client):
+        bad = output(items=[{"id": "hamburger", "quantity": 2}])
+        good = output(
+            items=[{"id": "margarita", "quantity": 2}],
+            unavailable=[{"text": "hamburger", "quantity": 2}],
+        )
+        fake = set_gemini(client, FakeGeminiClient([bad, good]))
+        response = post_order(client, {"text": "dva hamburgera i dvije margarite"})
+        assert response.status_code == 200
+        assert len(fake.calls) == 2
+        assert "hamburger" in fake.calls[1]  # validation error fed back to the model
+
+    def test_malformed_gemini_output_returns_502(self, client):
+        # parse_order raising GeminiError simulates schema-mismatch output.
+        from app.gemini_client import GeminiError
+
+        set_gemini(client, FakeGeminiClient([GeminiError("parsed is None")]))
+        response = post_order(client, {"text": "jednu colu"})
+        assert response.status_code == 502
+
+
+class TestInfrastructure:
+    def test_health_endpoint(self, client):
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+    def test_missing_key_returns_503(self, client):
+        # Lifespan sets gemini_client to None when no key; simulate that.
+        client.app.state.gemini_client = None
+        response = post_order(client, {"text": "jednu margaritu"})
+        assert response.status_code == 503
