@@ -27,8 +27,8 @@ take precedence). The key is never committed — `.env` is gitignored.
 The model defaults to `gemini-3.5-flash-lite` and can be overridden with
 `GEMINI_MODEL` (e.g. in `.env`) without code changes.
 
-The menu is loaded from `task/jelovnik.json` at startup; the service fails to
-start if the file is missing.
+The menu is loaded from `jelovnik.json` in the project root at startup; the
+service fails to start if the file is missing.
 
 ## API
 

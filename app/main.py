@@ -12,7 +12,7 @@ from app.gemini_client import GeminiClient, GeminiError
 from app.parsing import build_prompt, to_response, validate_output
 from app.schemas import OrderRequest
 
-MENU_PATH = Path(__file__).resolve().parent.parent / "task" / "jelovnik.json"
+MENU_PATH = Path(__file__).resolve().parent.parent / "jelovnik.json"
 INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
 
 
