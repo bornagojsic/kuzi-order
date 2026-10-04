@@ -6,12 +6,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from app.gemini_client import GeminiClient, GeminiError
 from app.parsing import build_prompt, to_response, validate_output
 from app.schemas import OrderRequest
 
 MENU_PATH = Path(__file__).resolve().parent.parent / "task" / "jelovnik.json"
+INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
 
 
 def load_menu() -> list[dict]:
@@ -70,6 +72,11 @@ async def create_order(request: OrderRequest, fastapi_request: Request) -> dict:
     else:
         result["suggestions"] = []
     return result
+
+
+@app.get("/app", include_in_schema=False)
+async def order_page() -> FileResponse:
+    return FileResponse(INDEX_PATH)
 
 
 @app.get("/health")
