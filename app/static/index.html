@@ -3,13 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
     <title>kuzi-order</title>
     <style>
       body {
         font-family: system-ui, sans-serif;
-        max-width: 640px;
+        max-width: 920px;
         margin: 2rem auto;
         padding: 0 1rem;
+      }
+      .layout {
+        display: flex;
+        gap: 2.5rem;
+        align-items: flex-start;
+      }
+      .order {
+        flex: 1;
+        min-width: 0;
+      }
+      #menu {
+        flex: 0 0 270px;
+        border-left: 1px solid #e5e5e5;
+        padding-left: 1.5rem;
+      }
+      @media (max-width: 760px) {
+        .layout {
+          flex-direction: column;
+        }
+        #menu {
+          flex: none;
+          border-left: none;
+          padding-left: 0;
+        }
       }
       h1 {
         font-size: 1.4rem;
@@ -52,14 +77,60 @@
         color: #666;
         font-size: 0.85rem;
       }
+      #menu {
+        margin-top: 0;
+      }
+      #menu h2 {
+        font-size: 1.1rem;
+      }
+      #menu h3 {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+        margin: 1rem 0 0.25rem;
+      }
+      .menu-item {
+        display: flex;
+        align-items: baseline;
+        gap: 0.4rem;
+        padding: 0.15rem 0;
+        font-size: 0.95rem;
+      }
+      .menu-item .name {
+        flex: none;
+      }
+      .menu-item .vege {
+        margin-right: 0.15rem;
+      }
+      .menu-item code {
+        font-size: 0.75rem;
+        color: #888;
+        background: #f5f5f5;
+        padding: 0 0.3rem;
+        border-radius: 3px;
+      }
+      .menu-item .dots {
+        flex: 1;
+        border-bottom: 1px dotted #bbb;
+      }
+      .menu-item .price {
+        flex: none;
+        font-variant-numeric: tabular-nums;
+      }
     </style>
   </head>
   <body>
     <h1>kuzi-order</h1>
-    <p id="hint">Primjer: "dva hamburgera, dvije margarite i jednu colu"</p>
-    <textarea id="order-text" placeholder="Unesite narudžbu..."></textarea>
-    <button id="send">Naruči</button>
-    <div id="response"></div>
+    <main class="layout">
+      <section class="order">
+        <p id="hint">Primjer: "dva hamburgera, dvije margarite i jednu colu"</p>
+        <textarea id="order-text" placeholder="Unesite narudžbu..."></textarea>
+        <button id="send">Naruči</button>
+        <div id="response"></div>
+      </section>
+      <aside id="menu"><h2>Jelovnik</h2></aside>
+    </main>
     <script>
       const button = document.getElementById("send");
       const textBox = document.getElementById("order-text");
@@ -101,6 +172,61 @@
       textBox.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send();
       });
+
+      async function loadMenu() {
+        const box = document.getElementById("menu");
+        try {
+          const res = await fetch("/menu");
+          if (!res.ok) throw new Error(res.status);
+          const items = await res.json();
+          const groups = new Map();
+          for (const item of items) {
+            if (!groups.has(item.kategorija)) groups.set(item.kategorija, []);
+            groups.get(item.kategorija).push(item);
+          }
+          box.replaceChildren();
+          const heading = document.createElement("h2");
+          heading.textContent = "Jelovnik";
+          box.appendChild(heading);
+          for (const [category, group] of groups) {
+            const h = document.createElement("h3");
+            h.textContent = category;
+            box.appendChild(h);
+            for (const item of group) {
+              const row = document.createElement("div");
+              row.className = "menu-item";
+              const name = document.createElement("span");
+              name.className = "name";
+              if (item.bez_mesa) {
+                const vege = document.createElement("span");
+                vege.className = "vege";
+                vege.textContent = "🥗";
+                vege.title = "Bez mesa";
+                name.appendChild(vege);
+              }
+              name.appendChild(document.createTextNode(item.naziv + " "));
+              const badge = document.createElement("code");
+              badge.textContent = item.id;
+              name.appendChild(badge);
+              const dots = document.createElement("span");
+              dots.className = "dots";
+              const price = document.createElement("span");
+              price.className = "price";
+              price.textContent = item.cijena_eur.toFixed(2).replace(".", ",") + " €";
+              row.append(name, dots, price);
+              box.appendChild(row);
+            }
+          }
+        } catch {
+          box.replaceChildren();
+          const heading = document.createElement("h2");
+          heading.textContent = "Jelovnik";
+          box.appendChild(heading);
+          box.appendChild(document.createTextNode("Jelovnik nije dostupan."));
+        }
+      }
+
+      loadMenu();
     </script>
   </body>
 </html>
