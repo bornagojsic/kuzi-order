@@ -37,11 +37,12 @@ class OrderResponse(BaseModel):
 
     `suggestions` is non-empty only when the customer asked a question instead
     of ordering (e.g. vegetarian recommendations); then `items` is empty.
+    Suggestions carry bare menu ids, no quantities.
     """
 
     items: list[OrderItem] = []
     unavailable: list[UnavailableItem] = []
-    suggestions: list[OrderItem] = []
+    suggestions: list[str] = []
 
 
 class GeminiOrder(BaseModel):
@@ -57,8 +58,12 @@ class GeminiOrder(BaseModel):
     unavailable: list[UnavailableItem] = Field(
         default_factory=list, description="Requested items that are NOT on the menu"
     )
-    suggestions: list[OrderItem] = Field(
-        default_factory=list, description="Only for intent='recommendation': suggested menu items"
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Only for intent='recommendation': ids of matching menu items, "
+            "each at most once, no quantities"
+        ),
     )
 
 

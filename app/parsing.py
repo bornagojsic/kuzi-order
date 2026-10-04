@@ -39,9 +39,12 @@ Interpret the customer's message and produce a structured result. Rules:
    dvije margarite"), use only their FINAL intent.
 5. If the customer is not ordering but asking a question (e.g. "imate li
    nešto bez mesa za nas dvoje?"), set intent to "recommendation", leave
-   "items" empty, and put suitable menu items (e.g. meat-free ones for a
-   "bez mesa" question) into "suggestions". The number of people mentioned
-   ("za nas dvoje") is not a quantity to order.
+   "items" empty, and list in "suggestions" the id of EVERY menu item that
+   matches the question, each exactly once, in MENU order. Suggestions are
+   menu ids only - never quantities. The number of people mentioned ("za
+   nas dvoje", "za nas deset") is not a quantity to order and must never
+   change which or how many items are suggested. Never include drinks
+   (kategorija "piće") unless the question is specifically about drinks.
 6. If the message contains no order at all and no question, return an empty
    result with intent "order" and empty lists."""
 
@@ -69,20 +72,16 @@ def validate_output(raw: dict, menu_ids: set[str]) -> list[str]:
         if item.quantity > MAX_QUANTITY:
             errors.append(f"unreasonable quantity {item.quantity} for item '{item.id}'")
 
-    suggestion_ids = [item.id for item in order.suggestions]
-    if len(suggestion_ids) != len(set(suggestion_ids)):
+    if len(order.suggestions) != len(set(order.suggestions)):
         errors.append("duplicate menu ids in suggestions: each item must appear at most once")
 
-    for item in order.suggestions:
-        if item.id not in menu_ids:
-            errors.append(f"unknown menu id '{item.id}' in suggestions")
+    for sid in order.suggestions:
+        if sid not in menu_ids:
+            errors.append(f"unknown menu id '{sid}' in suggestions")
 
     for item in order.unavailable:
         if item.quantity > MAX_QUANTITY:
             errors.append(f"unreasonable quantity {item.quantity} for unavailable '{item.text}'")
-
-    if order.intent == "order" and not order.items and not order.unavailable:
-        errors.append("intent is 'order' but both items and unavailable are empty")
 
     if order.intent == "recommendation" and order.items:
         errors.append("intent is 'recommendation' but items is not empty")
@@ -99,7 +98,5 @@ def to_response(parsed: GeminiOutput) -> dict:
             UnavailableItem(text=u.text, quantity=u.quantity).model_dump()
             for u in order.unavailable
         ],
-        "suggestions": [
-            OrderItem(id=s.id, quantity=s.quantity).model_dump() for s in order.suggestions
-        ],
+        "suggestions": list(order.suggestions),
     }

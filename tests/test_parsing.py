@@ -45,6 +45,14 @@ class TestBuildPrompt:
         prompt = build_prompt("text", [])
         assert "final intent" in prompt.lower()
         assert "recommendation" in prompt
+        assert "menu ids only" in prompt.lower()
+        assert "piće" in prompt  # drinks excluded unless the question is about drinks
+
+    def test_recommendation_independent_of_party_size(self):
+        prompt = build_prompt("imate li nešto bez mesa za nas deset?", [])
+        assert "must never" in prompt
+        assert "za nas dvoje" in prompt
+        assert "za nas deset" in prompt
 
     def test_demands_single_entry_per_menu_item(self):
         prompt = build_prompt("text", [])
@@ -66,10 +74,11 @@ class TestValidateOutput:
         raw["order"]["items"] = [{"id": "margarita", "quantity": 0}]
         assert validate_output(raw, MENU_IDS) != []
 
-    def test_rejects_empty_order(self):
+    def test_accepts_empty_order_for_gibberish(self):
+        # "a" contains no order; the prompt tells the model to answer with an
+        # empty result, which validation accepts as an honest response.
         raw = valid_output(items=[], unavailable=[])
-        errors = validate_output(raw, MENU_IDS)
-        assert any("empty" in e.lower() for e in errors)
+        assert validate_output(raw, MENU_IDS) == []
 
     def test_rejects_items_in_recommendation_intent(self):
         raw = valid_output(intent="recommendation")
@@ -81,7 +90,7 @@ class TestValidateOutput:
             intent="recommendation",
             items=[],
             unavailable=[],
-            suggestions=[{"id": "vegetariana", "quantity": 1}],
+            suggestions=["vegetariana"],
         )
         assert validate_output(raw, MENU_IDS) == []
 
@@ -90,7 +99,7 @@ class TestValidateOutput:
             intent="recommendation",
             items=[],
             unavailable=[],
-            suggestions=[{"id": "hamburger", "quantity": 1}],
+            suggestions=["hamburger"],
         )
         errors = validate_output(raw, MENU_IDS)
         assert any("suggestions" in e for e in errors)
@@ -114,11 +123,7 @@ class TestValidateOutput:
             intent="recommendation",
             items=[],
             unavailable=[],
-            suggestions=[
-                {"id": "vegetariana", "quantity": 1},
-                {"id": "margarita", "quantity": 1},
-                {"id": "vegetariana", "quantity": 1},
-            ],
+            suggestions=["vegetariana", "margarita", "vegetariana"],
         )
         errors = validate_output(raw, MENU_IDS)
         assert any("duplicate" in e.lower() and "suggestions" in e for e in errors)
@@ -131,6 +136,16 @@ class TestToResponse:
         assert result["items"] == [{"id": "margarita", "quantity": 2}]
         assert result["unavailable"] == [{"text": "hamburger", "quantity": 2}]
         assert result["suggestions"] == []
+
+    def test_suggestions_are_bare_ids(self):
+        raw = valid_output(
+            intent="recommendation",
+            items=[],
+            unavailable=[],
+            suggestions=["vegetariana", "margarita"],
+        )
+        parsed = GeminiOutput.model_validate(raw)
+        assert to_response(parsed)["suggestions"] == ["vegetariana", "margarita"]
 
     def test_intent_is_required(self):
         raw = valid_output()
