@@ -2,9 +2,13 @@
 
 Auto-skipped unless GEMINI_API_KEY is set. Run with:
     GEMINI_API_KEY=... uv run pytest -m integration
+
+Add --slow to pause 30s between test cases (free-tier rate-limit friendly):
+    GEMINI_API_KEY=... uv run pytest -m integration --slow
 """
 
 import os
+import time
 
 import pytest
 
@@ -17,6 +21,18 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.gemini_client import GeminiClient  # noqa: E402
 from app.main import app  # noqa: E402
+
+SLOW_PAUSE_SECONDS = 30
+
+
+@pytest.fixture(autouse=True)
+def slow_pause_between_api_calls(request: pytest.FixtureRequest):
+    """With --slow, sleep 30s before every API test except the first."""
+    if request.config.getoption("--slow"):
+        if getattr(request.session, "_kuzi_api_tests_run", 0) > 0:
+            time.sleep(SLOW_PAUSE_SECONDS)
+    request.session._kuzi_api_tests_run = getattr(request.session, "_kuzi_api_tests_run", 0) + 1
+    yield
 
 
 @pytest.fixture

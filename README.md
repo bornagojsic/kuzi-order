@@ -103,6 +103,7 @@ validates, deterministically and in its own code:
 ```bash
 uv run pytest                    # unit + API tests (Gemini fully mocked)
 uv run pytest -m integration    # optional real-Gemini tests, needs GEMINI_API_KEY
+uv run pytest -m integration --slow  # same, but pauses 30s between API test cases
 uv run ruff check . && uv run ruff format --check .
 ```
 
