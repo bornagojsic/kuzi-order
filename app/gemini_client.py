@@ -40,8 +40,9 @@ class GeminiClient:
     def parse_order(self, prompt: str, retries: int = TRANSIENT_RETRIES) -> GeminiOutput:
         """Call Gemini with a structured-output schema and return the parsed result.
 
-        The JSON text is parsed against the schema here rather than through the
-        SDK's automatic function calling, which is deprecated for generate_content.
+        The JSON text is parsed against the schema here so that invalid output
+        fails with a clear GeminiError; no tools are passed, so automatic
+        function calling is not in play.
 
         Raises GeminiError on any SDK failure or on output that does not match
         the schema. `retries` bounds the extra attempts made for transient
@@ -86,9 +87,6 @@ class GeminiClient:
                         response_schema=GeminiOutput,
                         response_mime_type="application/json",
                         temperature=0,
-                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                            disable=True
-                        ),
                     ),
                 )
             except Exception as exc:
