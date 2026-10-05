@@ -67,26 +67,6 @@ uv run pytest -m integration --slow  # real Gemini, runs at 12 RPM
 
 ## What could be better, and how to check it works
 
-Worth adding: sessions, so a follow-up message ("a dodaj još jednu colu") can
-amend an order, and a CI job that replays a labelled set of utterances against
-the model on every change. To verify the system works well: keep a golden set
-of ~30–50 real Croatian utterances (number words, typos, self-corrections,
-questions) with expected `items`/`unavailable` and measure per-field exact
-match — treating any invented menu id or dropped item as a hard failure, not
-just a lower score. A starter table already lives in
-`tests/test_integration.py` (`UTTERANCE_CASES`) and runs against the real
-model with `uv run pytest -m integration`. The deterministic parts (prompt
-rules, validation, error mapping) are unit-tested without any model calls, and
-fault injection covers the 502/503 paths. Once running, the biggest practical
-risk is the silent wrong 200: the model can return plausible but wrong JSON
-(a real order parsed as empty, a misaggregated quantity), which no single
-request can detect — only replaying a golden set several times and requiring
-5/5 exact matches measures it. Second is latency collapse: Gemini calls have
-no per-call timeout and concurrency is unbounded, so a slow model can exhaust
-the request threadpool and stall the entire service — add a call timeout and
-a concurrency limit, then verify with a parallel load probe that p95 stays
-bounded. Third, recoverable failures are fatal today: fenced or truncated
-JSON and free-tier 429s become hard 502s instead of using the existing
-feedback retry and smarter backoff. Finally, none of this is visible in
-production — log intent, feedback-retry rate, latency and empty-result rate
-per request, and alert on spikes.
+To verify the system works well: extend the set of real Croatian utterances (number words, typos, self-corrections, questions) with expected `items`/`unavailable`/`suggestions` and measure per-field exact
+match. A starter table already lives in `tests/test_integration.py` (`UTTERANCE_CASES`) and runs against the real model with `uv run pytest -m integration`. The deterministic parts (prompt rules, validation, error mapping) are unit-tested without any model calls. Once running, the biggest practical risk is the silent wrong 200: the model can return plausible but wrong JSON (a real order parsed as empty, a misaggregated quantity), which no single request can detect. Second is latency collapse: Gemini calls have
+no per-call timeout and concurrency is unbounded, so a slow model can exhaust the request threadpool and stall the entire service — add a call timeout and a concurrency limit, then verify with a parallel load probe that p95 stays bounded. Finally, none of this is visible in production — log intent, feedback-retry rate, latency and empty-result rate per request, and alert on spikes.
