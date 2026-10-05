@@ -40,9 +40,9 @@ class OrderResponse(BaseModel):
     Suggestions carry bare menu ids, no quantities.
     """
 
-    items: list[OrderItem] = []
-    unavailable: list[UnavailableItem] = []
-    suggestions: list[str] = []
+    items: list[OrderItem] = Field(default_factory=list)
+    unavailable: list[UnavailableItem] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
 
 
 class GeminiOrder(BaseModel):
