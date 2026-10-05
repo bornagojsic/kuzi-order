@@ -3,7 +3,7 @@
 No I/O here: both functions are trivially unit-testable without network access.
 """
 
-from app.schemas import GeminiOutput, OrderItem, UnavailableItem
+from app.schemas import GeminiOutput, OrderItem, OrderResponse, UnavailableItem
 
 MAX_QUANTITY = 100
 
@@ -93,14 +93,11 @@ def validate_output(raw: dict, menu_ids: set[str]) -> list[str]:
     return errors
 
 
-def to_response(parsed: GeminiOutput) -> dict:
+def to_response(parsed: GeminiOutput) -> OrderResponse:
     """Convert a validated GeminiOutput into the API response payload."""
     order = parsed.order
-    return {
-        "items": [OrderItem(id=i.id, quantity=i.quantity).model_dump() for i in order.items],
-        "unavailable": [
-            UnavailableItem(text=u.text, quantity=u.quantity).model_dump()
-            for u in order.unavailable
-        ],
-        "suggestions": list(order.suggestions),
-    }
+    return OrderResponse(
+        items=[OrderItem(id=i.id, quantity=i.quantity) for i in order.items],
+        unavailable=[UnavailableItem(text=u.text, quantity=u.quantity) for u in order.unavailable],
+        suggestions=list(order.suggestions),
+    )

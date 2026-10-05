@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 
 from app.gemini_client import GeminiClient, GeminiError
 from app.parsing import build_prompt, to_response, validate_output
-from app.schemas import OrderRequest
+from app.schemas import OrderRequest, OrderResponse
 
 MENU_PATH = Path(__file__).resolve().parent.parent / "jelovnik.json"
 INDEX_PATH = Path(__file__).resolve().parent / "static" / "index.html"
@@ -37,8 +37,8 @@ app = FastAPI(title="kuzi-order", lifespan=lifespan)
 
 # Sync endpoint on purpose: the Gemini call blocks (retries with backoff), so
 # FastAPI runs it in the threadpool instead of stalling the event loop.
-@app.post("/order")
-def create_order(request: OrderRequest, fastapi_request: Request) -> dict:
+@app.post("/order", response_model=OrderResponse)
+def create_order(request: OrderRequest, fastapi_request: Request) -> OrderResponse:
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=422, detail="Order text is empty")
@@ -69,10 +69,10 @@ def create_order(request: OrderRequest, fastapi_request: Request) -> dict:
     result = to_response(parsed)
     if parsed.order.intent == "recommendation":
         # A question, not an order: never create items from a recommendation.
-        result["items"] = []
-        result["unavailable"] = []
+        result.items = []
+        result.unavailable = []
     else:
-        result["suggestions"] = []
+        result.suggestions = []
     return result
 
 

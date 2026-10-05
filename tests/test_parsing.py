@@ -1,7 +1,7 @@
 """Unit tests for output validation and response mapping - no network, no mocks."""
 
 from app.parsing import to_response, validate_output
-from app.schemas import GeminiOrder, GeminiOutput
+from app.schemas import GeminiOrder, GeminiOutput, OrderItem, UnavailableItem
 
 MENU_IDS = {"margarita", "capricciosa", "coca_cola", "vegetariana"}
 
@@ -92,9 +92,9 @@ class TestToResponse:
     def test_converts_valid_output(self):
         parsed = GeminiOutput.model_validate(valid_output())
         result = to_response(parsed)
-        assert result["items"] == [{"id": "margarita", "quantity": 2}]
-        assert result["unavailable"] == [{"text": "hamburger", "quantity": 2}]
-        assert result["suggestions"] == []
+        assert result.items == [OrderItem(id="margarita", quantity=2)]
+        assert result.unavailable == [UnavailableItem(text="hamburger", quantity=2)]
+        assert result.suggestions == []
 
     def test_suggestions_are_bare_ids(self):
         raw = valid_output(
@@ -104,7 +104,7 @@ class TestToResponse:
             suggestions=["vegetariana", "margarita"],
         )
         parsed = GeminiOutput.model_validate(raw)
-        assert to_response(parsed)["suggestions"] == ["vegetariana", "margarita"]
+        assert to_response(parsed).suggestions == ["vegetariana", "margarita"]
 
     def test_intent_is_required(self):
         raw = valid_output()
