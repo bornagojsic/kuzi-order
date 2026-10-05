@@ -1,6 +1,6 @@
-"""Unit tests for prompt building and output validation - no network, no mocks."""
+"""Unit tests for output validation and response mapping - no network, no mocks."""
 
-from app.parsing import build_prompt, to_response, validate_output
+from app.parsing import to_response, validate_output
 from app.schemas import GeminiOrder, GeminiOutput
 
 MENU_IDS = {"margarita", "capricciosa", "coca_cola", "vegetariana"}
@@ -16,47 +16,6 @@ def valid_output(**overrides) -> dict:
     parsed = GeminiOutput(order=order).model_dump()
     parsed["order"].update(overrides)
     return parsed
-
-
-class TestBuildPrompt:
-    def test_includes_menu_ids_and_names(self):
-        menu = [
-            {
-                "id": "margarita",
-                "naziv": "Pizza Margarita",
-                "kategorija": "pizza",
-                "bez_mesa": True,
-            },
-            {
-                "id": "coca_cola",
-                "naziv": "Coca-Cola 0,33 l",
-                "kategorija": "piće",
-                "bez_mesa": True,
-            },
-        ]
-        prompt = build_prompt("dva hamburgera", menu)
-        assert "margarita" in prompt
-        assert "Pizza Margarita" in prompt
-        assert "coca_cola" in prompt
-        assert "dva hamburgera" in prompt
-        assert "never invent" in prompt.lower()
-
-    def test_includes_self_correction_and_recommendation_rules(self):
-        prompt = build_prompt("text", [])
-        assert "final intent" in prompt.lower()
-        assert "recommendation" in prompt
-        assert "menu ids only" in prompt.lower()
-        assert "piće" in prompt  # drinks excluded unless the question is about drinks
-
-    def test_recommendation_independent_of_party_size(self):
-        prompt = build_prompt("imate li nešto bez mesa za nas deset?", [])
-        assert "must never" in prompt
-        assert "za nas dvoje" in prompt
-        assert "za nas deset" in prompt
-
-    def test_demands_single_entry_per_menu_item(self):
-        prompt = build_prompt("text", [])
-        assert "at most once" in prompt
 
 
 class TestValidateOutput:

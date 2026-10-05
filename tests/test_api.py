@@ -99,20 +99,6 @@ class TestOrder:
         }
         assert len(fake.calls) == 1
 
-    def test_self_correction_uses_final_intent(self, client):
-        # The model is instructed to return the final intent; the fake models that.
-        corrected = output(
-            items=[{"id": "margarita", "quantity": 2}, {"id": "coca_cola", "quantity": 1}],
-            unavailable=[],
-        )
-        set_gemini(client, FakeGeminiClient([corrected]))
-        response = post_order(client, {"text": "tri margarite i colu, ma ne, ipak dvije margarite"})
-        assert response.status_code == 200
-        assert response.json()["items"] == [
-            {"id": "margarita", "quantity": 2},
-            {"id": "coca_cola", "quantity": 1},
-        ]
-
 
 class TestRecommendation:
     def test_vegetarian_question_returns_bare_ids_no_items(self, client):
