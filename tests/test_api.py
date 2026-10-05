@@ -257,9 +257,9 @@ class TestInfrastructure:
 class TestRealGeminiClient:
     """Drives the real GeminiClient over a scripted SDK.
 
-    FakeGeminiClient cannot see bugs inside GeminiClient itself - e.g. the
-    regression where parse_order_with_feedback was accidentally nested inside
-    _is_transient and every feedback retry raised AttributeError (HTTP 500).
+    FakeGeminiClient cannot see bugs inside GeminiClient itself, so these
+    tests exercise the real client, including parse_order and the
+    parse_order_with_feedback path.
     """
 
     def test_exposes_feedback_method(self):
