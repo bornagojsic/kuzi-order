@@ -33,6 +33,11 @@ SLOW_PAUSE_SECONDS = 5
 # {(text, quantity)}) - unavailable item ordering is not contractual, so the
 # texts are compared as a set.
 UTTERANCE_CASES = [
+    (
+        "dva hamburgera, dvije margarite i jednu colu",
+        [("margarita", 2), ("coca_cola", 1)],
+        {("hamburger", 2)},
+    ),
     ("dvije margarite i još jednu margaritu", [("margarita", 3)], set()),
     ("dvije margarite, ma ne, tri", [("margarita", 3)], set()),
     ("tri margarite, ne dvije, zapravo jednu", [("margarita", 1)], set()),
@@ -61,17 +66,6 @@ def client():
         yield test_client
 
 
-def test_real_happy_path(client):
-    response = client.post("/order", json={"text": "dva hamburgera, dvije margarite i jednu colu"})
-    assert response.status_code == 200
-    body = response.json()
-    assert body["items"] == [
-        {"id": "margarita", "quantity": 2},
-        {"id": "coca_cola", "quantity": 1},
-    ]
-    assert body["unavailable"] == [{"text": "hamburger", "quantity": 2}]
-
-
 VEGETARIAN_FOOD_IDS = {"margarita", "vegetariana", "quattro_formaggi", "mijesana_salata"}
 
 
@@ -81,15 +75,16 @@ def test_real_vegetarian_question(client):
     body = response.json()
     assert body["items"] == []
     assert set(body["suggestions"]) == VEGETARIAN_FOOD_IDS
-    assert not any(s in body["suggestions"] for s in ("coca_cola", "mineralna_voda", "pivo"))
 
 
 def test_real_vegetarian_question_ignores_party_size(client):
-    two = client.post("/order", json={"text": "imate li nešto bez mesa za nas dvoje?"})
-    assert two.status_code == 200
-    ten = client.post("/order", json={"text": "imate li nešto bez mesa za nas deset?"})
-    assert ten.status_code == 200
-    assert ten.json()["suggestions"] == two.json()["suggestions"]
+    three = client.post("/order", json={"text": "imate li nešto bez mesa za nas troje?"})
+    assert three.status_code == 200
+    eight = client.post("/order", json={"text": "imate li nešto bez mesa za nas osmero?"})
+    assert eight.status_code == 200
+    assert (
+        set(eight.json()["suggestions"]) == set(three.json()["suggestions"]) == VEGETARIAN_FOOD_IDS
+    )
 
 
 @pytest.mark.parametrize("text,expected_items,expected_unavailable", UTTERANCE_CASES)

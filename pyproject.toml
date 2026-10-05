@@ -29,4 +29,10 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-m 'not integration'"
+filterwarnings = [
+    # third-party, not actionable here: starlette plans to switch to httpx2
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*",
+    # third-party, not actionable here: Python 3.17 will remove _UnionGenericAlias
+    "ignore:'_UnionGenericAlias' is deprecated.*",
+]
 markers = ["integration: real Gemini calls, skipped without GEMINI_API_KEY"]

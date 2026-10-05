@@ -59,8 +59,10 @@ shows status.
 ## Tests
 
 ```bash
-uv run pytest                  # mocked, no network
-uv run pytest -m integration   # real Gemini, skipped without a key
+uv run pytest                        # mocked, no network
+uv run pytest -m integration         # real Gemini, skipped without a key
+
+uv run pytest -m integration --slow  # real Gemini, runs at 12 RPM
 ```
 
 ## What could be better, and how to check it works

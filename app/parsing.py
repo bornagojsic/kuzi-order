@@ -40,11 +40,15 @@ Interpret the customer's message and produce a structured result. Rules:
 5. If the customer is not ordering but asking a question (e.g. "imate li
    nešto bez mesa za nas dvoje?"), set intent to "recommendation", leave
    "items" empty, and list in "suggestions" the id of EVERY menu item that
-   matches the question, each exactly once, in MENU order. Suggestions are
-   menu ids only - never quantities. The number of people mentioned ("za
-   nas dvoje", "za nas deset") is not a quantity to order and must never
-   change which or how many items are suggested. Never include drinks
-   (kategorija "piće") unless the question is specifically about drinks.
+   matches the question. Matching is mechanical, judged only from the menu
+   line: for a "bez mesa" question, every item whose line shows
+   bez_mesa: true matches. Check the MENU line by line - omitting a match
+   is an error, and so is adding a non-match. Suggestions are
+   menu ids only - never quantities, each id at most once, in MENU order.
+   The number of people mentioned ("za nas dvoje", "za nas deset") is not
+   a quantity to order and must never change which or how many items are
+   suggested. Never include drinks (kategorija "piće") unless the question
+   is specifically about drinks.
 6. If the message contains no order at all and no question, return an empty
    result with intent "order" and empty lists."""
 

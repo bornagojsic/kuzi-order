@@ -84,7 +84,7 @@ def post_order(client: TestClient, body: dict):
     return client.post("/order", json=body)
 
 
-class TestHappyPath:
+class TestOrder:
     def test_basic_order(self, client):
         fake = set_gemini(client, FakeGeminiClient([output()]))
         response = post_order(client, {"text": "dvije margarite i jednu colu"})
