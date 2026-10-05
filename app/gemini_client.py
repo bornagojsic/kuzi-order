@@ -60,10 +60,10 @@ class GeminiClient:
     def parse_order_with_feedback(
         self, prompt: str, previous: str, errors: list[str]
     ) -> GeminiOutput:
-        """Retry a failed attempt, feeding the validation errors back to the model.
+        """Retry invalid model output once with validation feedback.
 
-        No transient retries here: a request is bounded at two model calls
-        (initial + feedback), so one bad answer cannot multiply into six calls.
+        The feedback call does not perform transient retries, which prevents a
+        semantic correction attempt from multiplying the number of model calls.
         """
         feedback = (
             f"{prompt}\n\nYour previous answer was invalid:\n{previous}\n"
