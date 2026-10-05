@@ -47,9 +47,8 @@ Self-corrections ("tri margarite i
 colu, ma ne, ipak dvije margarite") resolve to the final intent. A message
 with no order at all ("a") returns empty lists.
 
-Other endpoints: `GET /menu` returns the raw `jelovnik.json` menu; `/app`
-serves a small web UI for typing orders and shows the menu beside the order
-form; `/docs` has the interactive schema.
+Other endpoints: `/app`
+serves a small web UI for typing orders; `/docs` has the interactive schema.
 
 Errors: 422 bad input (missing, null, non-string, empty, whitespace-only or
 too long text), 502 Gemini failed or its

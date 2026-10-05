@@ -227,26 +227,6 @@ class TestInfrastructure:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
-    def test_menu_endpoint_returns_menu_items(self, client):
-        response = client.get("/menu")
-        assert response.status_code == 200
-        menu = response.json()
-        assert [item["id"] for item in menu] == [
-            "margarita",
-            "capricciosa",
-            "diavola",
-            "vegetariana",
-            "quattro_formaggi",
-            "cezar_salata",
-            "mijesana_salata",
-            "coca_cola",
-            "mineralna_voda",
-            "pivo",
-        ]
-        assert menu[0]["naziv"] == "Pizza Margarita"
-        assert menu[0]["cijena_eur"] == 9.0
-        assert menu[0]["bez_mesa"] is True
-
     def test_missing_key_returns_503(self, client):
         # Lifespan sets gemini_client to None when no key; simulate that.
         client.app.state.gemini_client = None

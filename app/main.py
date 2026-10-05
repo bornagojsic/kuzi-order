@@ -81,11 +81,6 @@ async def order_page() -> FileResponse:
     return FileResponse(INDEX_PATH)
 
 
-@app.get("/menu")
-async def menu(fastapi_request: Request) -> list[dict]:
-    return fastapi_request.app.state.menu
-
-
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok", "gemini_configured": app.state.gemini_client is not None}
